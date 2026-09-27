@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
+import logging
 from uuid import uuid4
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models import Booking, BookingStatus, CentreTest, DiagnosticCentre, DiagnosticTest, Payment, PaymentStatus, User, WebhookEvent
+
+logger = logging.getLogger("healthcare")
 
 ALLOWED_TRANSITIONS = {
     BookingStatus.PENDING.value: {BookingStatus.CONFIRMED.value, BookingStatus.FAILED.value, BookingStatus.CANCELLED.value},
@@ -43,6 +46,7 @@ def create_booking(db: Session, user: User, centre_id: int, test_id: int, appoin
     db.add(booking)
     db.commit()
     db.refresh(booking)
+    logger.info("booking_created", extra={"event": "booking_created", "booking_id": booking.id, "user_id": user.id})
     return booking
 
 
@@ -57,6 +61,10 @@ def process_payment(db: Session, user: User, booking_id: int, simulate: str) -> 
     transition_booking(booking, BookingStatus.CONFIRMED.value if simulate == PaymentStatus.SUCCESS.value else BookingStatus.FAILED.value)
     db.commit()
     db.refresh(payment)
+    logger.info(
+        "payment_processed",
+        extra={"event": "payment_processed", "payment_id": payment.id, "booking_id": booking.id, "result": payment.status},
+    )
     return payment
 
 
@@ -66,6 +74,10 @@ def process_webhook(db: Session, event_id: str, payment_id: int, event_status: s
         payment = db.get(Payment, existing.payment_id)
         if payment is None:
             raise HTTPException(status_code=404, detail="Payment not found")
+        logger.info(
+            "duplicate_webhook_ignored",
+            extra={"event": "webhook_duplicate", "event_id": event_id, "payment_id": payment.id},
+        )
         return payment
     payment = db.get(Payment, payment_id)
     if payment is None:
@@ -89,4 +101,8 @@ def process_webhook(db: Session, event_id: str, payment_id: int, event_status: s
         if payment is None:
             raise HTTPException(status_code=404, detail="Payment not found")
     db.refresh(payment)
+    logger.info(
+        "webhook_processed",
+        extra={"event": "webhook_processed", "event_id": event_id, "payment_id": payment.id, "result": payment.status},
+    )
     return payment

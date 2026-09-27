@@ -1,4 +1,9 @@
+import logging
+import time
+from uuid import uuid4
+
 from fastapi import Depends, FastAPI, HTTPException
+from starlette.requests import Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -7,8 +12,38 @@ from app.models import Booking, BookingStatus, CentreTest, DiagnosticCentre, Dia
 from app.schemas import BookingCreate, BookingResponse, CentreResponse, CentreTestResponse, LoginRequest, PaymentCreate, PaymentResponse, TestResponse, TokenResponse, UserCreate, UserResponse, WebhookRequest
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 from app.services import create_booking, get_owned_booking, process_payment, process_webhook, transition_booking
+from app.logging_config import configure_logging
 
-app = FastAPI(title="EVE Healthcare Backend", version="0.1.0")
+logger = configure_logging()
+app = FastAPI(title="Healthcare Backend API", version="0.1.0")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", uuid4().hex)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request_failed",
+            extra={"event": "http_request_failed", "request_id": request_id, "method": request.method, "path": request.url.path},
+        )
+        raise
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_completed",
+        extra={
+            "event": "http_request",
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+        },
+    )
+    return response
 
 
 @app.on_event("startup")
@@ -99,6 +134,7 @@ def cancel_booking(booking_id: int, user: User = Depends(get_current_user), db: 
     transition_booking(booking, BookingStatus.CANCELLED.value)
     db.commit()
     db.refresh(booking)
+    logger.info("booking_cancelled", extra={"event": "booking_cancelled", "booking_id": booking.id, "user_id": user.id})
     return booking
 
 

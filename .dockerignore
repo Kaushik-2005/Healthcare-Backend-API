@@ -1,0 +1,14 @@
+.git
+.venv
+.pytest_cache
+.pytestdeps
+.testdeps
+__pycache__
+*.pyc
+*.db
+*.egg-info
+.env
+Assignment.pdf
+AGENTS.md
+roadmap.md
+

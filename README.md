@@ -52,6 +52,16 @@ Start the API:
 uvicorn app.main:app --reload
 ```
 
+### Run with Docker Compose
+
+Docker Compose starts PostgreSQL, waits for its health check, runs the Alembic migration, and starts the API:
+
+```powershell
+docker compose up --build
+```
+
+The API is then available at `http://127.0.0.1:8000`. Stop the services with `Ctrl+C`, or run `docker compose down`. Add `-v` to `docker compose down -v` only when you intentionally want to remove the PostgreSQL data volume.
+
 The interactive API documentation is available at `http://127.0.0.1:8000/docs`; ReDoc is available at `/redoc`.
 
 For a detailed walkthrough of the API, file responsibilities, architecture, database design, and troubleshooting, see [USER_GUIDE.md](USER_GUIDE.md).
@@ -195,13 +205,55 @@ pytest
 
 The tests cover authentication, centre/test retrieval, price snapshots, booking validation, ownership, successful and failed payments, cancellation rules, unknown webhooks, and repeated webhook idempotency.
 
-Run the complete automated evaluation, including a clean end-to-end API audit:
+Application logs are emitted as structured JSON lines. Each request includes a request ID, method, path, status code, and duration. Business events include booking creation, payment processing, cancellation, and webhook handling. Passwords, JWTs, request bodies, and authorization headers are never logged.
+
+Example request log:
+
+```json
+{
+  "timestamp": "2026-09-27T14:58:53.779620+00:00",
+  "level": "INFO",
+  "logger": "healthcare",
+  "message": "request_completed",
+  "event": "http_request",
+  "request_id": "f6533d2e9a314d81901c9c0eb359d6c3",
+  "method": "GET",
+  "path": "/health",
+  "status_code": 200,
+  "duration_ms": 1.38
+}
+```
+
+Example payment log:
+
+```json
+{
+  "level": "INFO",
+  "event": "payment_processed",
+  "booking_id": 1,
+  "payment_id": 1,
+  "result": "SUCCESS"
+}
+```
+
+Example duplicate webhook log:
+
+```json
+{
+  "level": "INFO",
+  "event": "webhook_duplicate",
+  "event_id": "evaluation-success-event",
+  "payment_id": 1
+}
+```
+
+Run the narrated automated API evaluation:
 
 ```powershell
 python scripts\evaluate.py
 ```
 
-Use `python scripts\evaluate.py --skip-tests` to run only the API audit.
+The script prints each workflow step, result, and visual data-flow path such as `CLIENT -> ROUTER -> SERVICE -> DATABASE`. It uses a temporary SQLite database and does not run pytest. Run `pytest` separately when you want the unit/integration test suite.
 
 ## Design decisions and assumptions
 
@@ -215,7 +267,6 @@ Use `python scripts\evaluate.py --skip-tests` to run only the API audit.
 
 ## What could be improved with more time
 
-- Add Docker Compose for PostgreSQL and the API.
 - Add a production migration-only startup path instead of automatic `create_all`.
 - Add stronger webhook signature validation and provider-specific event schemas.
 - Add concurrency integration tests against PostgreSQL.

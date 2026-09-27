@@ -85,6 +85,28 @@ webhook_events
 
 The application also creates tables on startup for local convenience and seeds one diagnostic centre and one test when no centre exists.
 
+### Docker Compose setup
+
+Docker Compose provides a PostgreSQL database and API container:
+
+```powershell
+docker compose up --build
+```
+
+The API container waits for the database health check, runs `alembic upgrade head`, and starts Uvicorn. Open `http://127.0.0.1:8000/docs` after the containers start.
+
+Stop the containers without deleting database data:
+
+```powershell
+docker compose down
+```
+
+To remove the PostgreSQL volume as well, use this only when a clean database is intended:
+
+```powershell
+docker compose down -v
+```
+
 ## 6. Start the application
 
 ```powershell
@@ -290,6 +312,9 @@ scripts/
 
 .env.example
 .gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
 AGENTS.md
 alembic.ini
 Assignment.pdf
@@ -379,20 +404,66 @@ Test files:
 
 The test fixture uses a separate SQLite database and resets its data before each test.
 
+## Structured logging
+
+The application writes dependency-free structured JSON logs to standard output. Request logs include the HTTP method, path, status code, duration, and an `X-Request-ID` response header. If a client sends an `X-Request-ID` header, the same value is returned and logged; otherwise the application generates one.
+
+Business events are logged for booking creation, payment processing, cancellation, successful webhook processing, and duplicate webhook suppression. Passwords, JWTs, request bodies, and authorization headers are intentionally excluded from logs.
+
+Example request log:
+
+```json
+{
+  "timestamp": "2026-09-27T14:58:53.779620+00:00",
+  "level": "INFO",
+  "logger": "healthcare",
+  "message": "request_completed",
+  "event": "http_request",
+  "request_id": "f6533d2e9a314d81901c9c0eb359d6d3",
+  "method": "GET",
+  "path": "/health",
+  "status_code": 200,
+  "duration_ms": 1.38
+}
+```
+
+Example payment log:
+
+```json
+{
+  "level": "INFO",
+  "event": "payment_processed",
+  "booking_id": 1,
+  "payment_id": 1,
+  "result": "SUCCESS"
+}
+```
+
+Example duplicate webhook log:
+
+```json
+{
+  "level": "INFO",
+  "event": "webhook_duplicate",
+  "event_id": "evaluation-success-event",
+  "payment_id": 1
+}
+```
+
 ## 13. Automating the evaluation
 
-Run the complete evaluation from the repository root:
+Run the narrated automated API evaluation from the repository root:
 
 ```powershell
 python scripts\evaluate.py
 ```
 
-The script runs `pytest`, then executes a clean end-to-end API audit using a temporary SQLite database. It checks authentication, centre/test retrieval, price snapshots, booking ownership, successful and failed payments, cancellation rules, repeated webhooks, invalid appointments, and unknown payments.
+The script prints each workflow step, result, and visual data-flow path such as `CLIENT -> ROUTER -> SERVICE -> DATABASE`, then reports `AUTOMATED EVALUATION PASSED`. It uses a temporary SQLite database and checks authentication, centre/test retrieval, price snapshots, booking ownership, successful and failed payments, cancellation rules, repeated webhooks, invalid appointments, and unknown payments. It does not run pytest.
 
-If the local pytest environment is unavailable, run only the API audit:
+Run the test suite separately with:
 
 ```powershell
-python scripts\evaluate.py --skip-tests
+pytest
 ```
 
 The temporary evaluation database is removed automatically when the script completes.
