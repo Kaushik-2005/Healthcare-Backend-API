@@ -1,4 +1,4 @@
-# EVE Healthcare Backend User Guide
+# User Guide
 
 This guide explains how to run, use, understand, and extend the EVE Healthcare backend assignment.
 
