@@ -1,0 +1,13 @@
+.env
+*.md
+!README.md
+!USER_GUIDE.md
+*.pdf
+*.db
+__pycache__/
+.pytest_cache/
+.pytestdeps/
+.testdeps/
+.venv/
+*.egg-info/
+.dist/
