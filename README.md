@@ -1,5 +1,4 @@
-# EVE Healthcare Backend Assignment
-
+# Healthcare Backend API
 A small backend service for diagnostic-centre test bookings and simulated payments.
 
 ## Overview
