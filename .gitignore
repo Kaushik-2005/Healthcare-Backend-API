@@ -2,6 +2,7 @@
 *.md
 !README.md
 !USER_GUIDE.md
+!DESIGN.md
 *.pdf
 *.db
 __pycache__/

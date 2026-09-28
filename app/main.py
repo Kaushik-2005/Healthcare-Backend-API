@@ -2,7 +2,7 @@ import logging
 import time
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from starlette.requests import Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,7 @@ from app.schemas import BookingCreate, BookingResponse, CentreResponse, CentreTe
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 from app.services import create_booking, get_owned_booking, process_payment, process_webhook, transition_booking
 from app.logging_config import configure_logging
+from app.rate_limit import check_rate_limit
 
 logger = configure_logging()
 app = FastAPI(title="Healthcare Backend API", version="0.1.0")
@@ -22,6 +23,10 @@ app = FastAPI(title="Healthcare Backend API", version="0.1.0")
 async def log_requests(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", uuid4().hex)
     started = time.perf_counter()
+    rate_limit_response, rate_limit_headers = check_rate_limit(request)
+    if rate_limit_response is not None:
+        rate_limit_response.headers["X-Request-ID"] = request_id
+        return rate_limit_response
     try:
         response = await call_next(request)
     except Exception:
@@ -43,6 +48,8 @@ async def log_requests(request: Request, call_next):
             "duration_ms": duration_ms,
         },
     )
+    for name, value in rate_limit_headers.items():
+        response.headers[name] = value
     return response
 
 
@@ -88,8 +95,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
 
 @app.get("/centres", response_model=list[CentreResponse])
-def list_centres(db: Session = Depends(get_db)) -> list[DiagnosticCentre]:
-    return list(db.scalars(select(DiagnosticCentre).order_by(DiagnosticCentre.id)))
+def list_centres(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)) -> list[DiagnosticCentre]:
+    statement = select(DiagnosticCentre).order_by(DiagnosticCentre.id).offset(offset).limit(limit)
+    return list(db.scalars(statement))
 
 
 @app.get("/centres/{centre_id}", response_model=CentreResponse)
@@ -101,16 +109,17 @@ def get_centre(centre_id: int, db: Session = Depends(get_db)) -> DiagnosticCentr
 
 
 @app.get("/centres/{centre_id}/tests", response_model=list[CentreTestResponse])
-def list_centre_tests(centre_id: int, db: Session = Depends(get_db)) -> list[CentreTestResponse]:
+def list_centre_tests(centre_id: int, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)) -> list[CentreTestResponse]:
     if db.get(DiagnosticCentre, centre_id) is None:
         raise HTTPException(status_code=404, detail="Diagnostic centre not found")
-    rows = db.scalars(select(CentreTest).where(CentreTest.centre_id == centre_id)).all()
+    rows = db.scalars(select(CentreTest).where(CentreTest.centre_id == centre_id).offset(offset).limit(limit)).all()
     return [CentreTestResponse(id=row.test.id, name=row.test.name, description=row.test.description, price=row.price) for row in rows]
 
 
 @app.get("/tests", response_model=list[TestResponse])
-def list_tests(db: Session = Depends(get_db)) -> list[DiagnosticTest]:
-    return list(db.scalars(select(DiagnosticTest).order_by(DiagnosticTest.id)))
+def list_tests(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)) -> list[DiagnosticTest]:
+    statement = select(DiagnosticTest).order_by(DiagnosticTest.id).offset(offset).limit(limit)
+    return list(db.scalars(statement))
 
 
 @app.post("/bookings", response_model=BookingResponse, status_code=201)
@@ -119,8 +128,9 @@ def create_booking_endpoint(payload: BookingCreate, user: User = Depends(get_cur
 
 
 @app.get("/bookings", response_model=list[BookingResponse])
-def list_bookings(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[Booking]:
-    return list(db.scalars(select(Booking).where(Booking.user_id == user.id).order_by(Booking.id)))
+def list_bookings(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[Booking]:
+    statement = select(Booking).where(Booking.user_id == user.id).order_by(Booking.id).offset(offset).limit(limit)
+    return list(db.scalars(statement))
 
 
 @app.get("/bookings/{booking_id}", response_model=BookingResponse)

@@ -68,6 +68,7 @@ def run_evaluation() -> None:
             flow("CLIENT", "POST /auth/login", "ROUTER", "PASSWORD VERIFY", "JWT SERVICE", "TOKEN")
             login = client.post("/auth/login", json={"email": "evaluation-owner@example.com", "password": password})
             assert login.status_code == 200, login.text
+            assert login.headers["X-RateLimit-Limit"] == "20"
             token = login.json()["access_token"]
             owner = {"Authorization": f"Bearer {token}"}
             result(f"user_id={owner_id} password=[masked] password_hash=[never printed] jwt=[masked] -> login success")
@@ -80,7 +81,10 @@ def run_evaluation() -> None:
             centre_tests = client.get("/centres/1/tests")
             assert centre_tests.status_code == 200
             assert centre_tests.json()[0]["price"] == "500.00"
-            result("health, centres, tests, and centre-specific pricing -> retrieval success")
+            assert client.get("/centres?limit=1&offset=0").status_code == 200
+            assert client.get("/tests?limit=1&offset=0").status_code == 200
+            assert client.get("/centres?limit=101").status_code == 422
+            result("health, centres, tests, pricing, and pagination -> retrieval success")
 
             show("5/12", "Create pending booking")
             flow("CLIENT + JWT", "POST /bookings", "ROUTER", "BOOKING SERVICE", "PRICE LOOKUP", "bookings TABLE")

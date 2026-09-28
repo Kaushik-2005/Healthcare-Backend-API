@@ -1,5 +1,5 @@
 # Healthcare Backend API
-A small backend service for diagnostic-centre test bookings and simulated payments.
+Backend service for diagnostic-centre test bookings and simulated payments.
 
 ## Overview
 
@@ -13,7 +13,7 @@ The service supports:
 - Idempotent payment webhooks.
 - Ownership checks and validation for user-owned bookings.
 
-The implementation is a modular monolith. FastAPI routes handle HTTP concerns, service functions contain business rules, SQLAlchemy models represent persistence, and Pydantic schemas define API contracts.
+The application uses FastAPI routes, service functions, SQLAlchemy models, and Pydantic schemas.
 
 ## Tech stack
 
@@ -63,7 +63,10 @@ The API is then available at `http://127.0.0.1:8000`. Stop the services with `Ct
 
 The interactive API documentation is available at `http://127.0.0.1:8000/docs`; ReDoc is available at `/redoc`.
 
-For a detailed walkthrough of the API, file responsibilities, architecture, database design, and troubleshooting, see [USER_GUIDE.md](USER_GUIDE.md).
+Documentation:
+
+- [User Guide](USER_GUIDE.md): setup and API usage.
+- [Design](DESIGN.md): architecture, modules, database, flows, and constraints.
 
 Quick endpoint reference:
 
@@ -223,6 +226,32 @@ Example request log:
 }
 ```
 
+## Pagination
+
+List endpoints support optional pagination without changing their response shape. Supported endpoints are:
+
+```text
+GET /centres?limit=20&offset=0
+GET /centres/{centre_id}/tests?limit=20&offset=0
+GET /tests?limit=20&offset=20
+GET /bookings?limit=10&offset=0
+```
+
+`limit` defaults to `20` and accepts values between `1` and `100`. `offset` defaults to `0` and controls how many records are skipped. Invalid values return `422 Unprocessable Entity`.
+
+## Rate limiting
+
+Authentication, payment, and webhook endpoints have lightweight process-local limits:
+
+| Endpoint | Limit |
+|---|---:|
+| `POST /auth/signup` | 20 requests/minute |
+| `POST /auth/login` | 20 requests/minute |
+| `POST /payments/` | 30 requests/minute |
+| `POST /payments/webhook/` | 60 requests/minute |
+
+Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. Requests over the limit receive `429 Too Many Requests` and a `Retry-After` header. The limiter is process-local; a distributed deployment should replace it with Redis-backed rate limiting.
+
 Example payment log:
 
 ```json
@@ -246,27 +275,10 @@ Example duplicate webhook log:
 }
 ```
 
-Run the narrated automated API evaluation:
+Run the automated API evaluation:
 
 ```powershell
 python scripts\evaluate.py
 ```
 
-The script prints each workflow step, result, and visual data-flow path such as `CLIENT -> ROUTER -> SERVICE -> DATABASE`. It uses a temporary SQLite database and does not run pytest. Run `pytest` separately when you want the unit/integration test suite.
-
-## Design decisions and assumptions
-
-- The authenticated JWT is the only source of booking ownership; client-provided user IDs are not accepted.
-- Booking amounts are copied at creation time so later centre price changes do not alter existing bookings.
-- The mock payment endpoint accepts an explicit simulation result so tests are deterministic.
-- One payment is allowed per booking in this assignment.
-- Webhook requests are treated as provider callbacks and do not require user authentication.
-- The default local SQLite database makes evaluation easy; PostgreSQL is supported through `DATABASE_URL`.
-- The application creates tables on startup for convenience, while Alembic remains the source of migration history for repeatable setup.
-
-## What could be improved with more time
-
-- Add a production migration-only startup path instead of automatic `create_all`.
-- Add stronger webhook signature validation and provider-specific event schemas.
-- Add concurrency integration tests against PostgreSQL.
-- Add structured logging, metrics, and deployment configuration.
+The script executes the API workflow using a temporary SQLite database and prints each step and result. It does not run pytest. Run `pytest` separately for the test suite.
